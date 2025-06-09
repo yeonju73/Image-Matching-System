@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage.feature import local_binary_pattern, graycomatrix, graycoprops
 from scipy import signal as sg
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_score
@@ -137,10 +138,15 @@ y_train = np.array(train_labels)
 X_test  = np.array(test_feats)
 y_test  = np.array(test_labels)
 
-# --- PCA 차원 축소 ------------------------------------------
+# --- 1) Standard Scaler 적용 --------------------------------
+scaler = StandardScaler()
+X_train_s = scaler.fit_transform(X_train)
+X_test_s  = scaler.transform(X_test)
+
+# --- 2) PCA 차원 축소 ------------------------------------------
 pca = PCA(n_components=pca_dims, random_state=42)
-X_train_p = pca.fit_transform(X_train)
-X_test_p  = pca.transform(X_test)
+X_train_p = pca.fit_transform(X_train_s)
+X_test_p  = pca.transform(X_test_s)
 
 # --- KNN 학습 & 예측 ---------------------------------------
 knn = KNeighborsClassifier(n_neighbors=k_neighbors)
@@ -152,6 +158,7 @@ print("------------------ 교차검증 ----------------------")
 print(f"{cv_folds}-fold CV accuracies (1-NN): {cv_scores}")
 print(f"Mean CV accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
 print("------------------------------------------------")
+
 
 knn.fit(X_train_p, train_labels)
 

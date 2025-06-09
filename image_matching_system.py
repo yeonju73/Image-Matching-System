@@ -325,10 +325,10 @@ for label in labels:
 
         # 10 개의 train image
         # 실제 학습할 때는 전부 다 train data 로 넣어주면 됨
-        if i < 10:
+        if i < 100:
             train_features.append(laws_texture(gray_img)) # laws_texture만 사용
             train_labels.append(label)
-        elif 10 <= i < 20:
+        elif 100 <= i < 150:
             test_features.append(laws_texture(gray_img))
             test_labels.append(label)
         else:

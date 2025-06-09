@@ -1,3 +1,9 @@
+# result files
+c1_t1_a1.csv
+c1_t2_a1.csv
+c2_t1_a1.csv
+c2_t2_a1.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

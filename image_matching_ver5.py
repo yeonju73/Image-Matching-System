@@ -12,12 +12,6 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import classification_report
 import csv
 
-# 한 장의 예제 이미지 선택 (경로 수정)
-sample_path = './recaptcha-dataset/Large/Bicycle/Bicycle (3).png'
-img = cv2.imread(sample_path)
-if img is None:
-    raise FileNotFoundError(f"경로를 확인하세요: {sample_path}")
-
 # --- 설정 ---------------------------------------------------
 dataset_dir = './recaptcha-dataset/Large'
 labels = ['Bicycle','Bridge','Bus','Car','Chimney',
@@ -207,7 +201,7 @@ X_test_p  = pca.transform(X_test_s)
 knn = KNeighborsClassifier(n_neighbors=k_neighbors)
 
 # 교차검증
-cv_scores = cross_val_score(knn, X_train_s, y_train,
+cv_scores = cross_val_score(knn, X_train_p, y_train,
                             cv=cv_folds, scoring='accuracy', n_jobs=-1)
 print("\n------------------ 교차검증 ----------------------")
 print(f"{cv_folds}-fold CV accuracies (1-NN): {cv_scores}")

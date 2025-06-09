@@ -166,7 +166,7 @@ def extract_features(path):
     f_lbp    = extract_lbp(eq)                    # 64
     # f_glcm   = extract_glcm_props(eq)            # 5
     f_laws   = extract_laws(eq)                  # 9
-    f_edge   = extract_grad_orient_hist(sharp)           # 32
+    f_edge   = extract_grad_orient_hist(gray)           # 32
     f_lbp_sh = extract_lbp_sharp(sharp)           # 64
 
     # SIFT BoW

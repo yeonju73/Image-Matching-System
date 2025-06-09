@@ -12,7 +12,6 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import classification_report
 import csv
 
-
 # 한 장의 예제 이미지 선택 (경로 수정)
 sample_path = './recaptcha-dataset/Large/Bicycle/Bicycle (3).png'
 img = cv2.imread(sample_path)
@@ -24,7 +23,7 @@ dataset_dir = './recaptcha-dataset/Large'
 labels = ['Bicycle','Bridge','Bus','Car','Chimney',
           'Crosswalk','Hydrant','Motorcycle','Palm','Traffic Light']
 # PCA 축소 차원
-pca_dims = 40
+pca_dims = 60
 # KNN 이웃 개수
 k_neighbors = 4
 cv_folds    = 5

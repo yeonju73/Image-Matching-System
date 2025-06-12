@@ -16,9 +16,10 @@ import copy
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
-print("PyTorch Version: ",torch.__version__)
-print("Torchvision Version: ",torchvision.__version__)
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import classification_report
 
 """## Prepair Dataset"""
 
@@ -42,43 +43,6 @@ data_dir/Traffic Light/[...]/asd932_.png
 
 
 """
-
-data_dir = "./recaptcha-dataset/Large"
-class_names = ['Bicycle', 'Bridge', 'Bus', 'Car',
-               'Chimney', 'Crosswalk', 'Hydrant',
-               'Motorcycle', 'Palm', 'Traffic Light']
-
-input_size = 224
-batch_size = 32
-
-# Data augmentation and normalization for training
-# Just normalization for validation
-data_transforms = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.RandomResizedCrop(input_size),
-        transforms.RandomHorizontalFlip(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
-
-print("Initializing Datasets and Dataloaders...")
-
-image_datasets = datasets.ImageFolder(data_dir, data_transforms)  # your dataset
-num_data = len(image_datasets)
-indices = np.arange(num_data)
-np.random.shuffle(indices)
-
-train_size = int(num_data*0.8)
-train_indices = indices[:train_size]
-val_indices = indices[train_size:]
-train_set = torch.utils.data.Subset(image_datasets, train_indices)
-val_set = torch.utils.data.Subset(image_datasets, val_indices)
-
-print('Number of training data:', len(train_set))
-print('Number of validation data:', len(val_set))
-
-dataloaders = {'train': torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4),
-                 'val': torch.utils.data.DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=4)}
-
 def imshow(imgs, title=None):
     """Display image for Tensor."""
     imgs = imgs.numpy().transpose((1, 2, 0))
@@ -89,26 +53,6 @@ def imshow(imgs, title=None):
     plt.imshow(imgs)
     if title is not None:
         plt.title(title)
-
-# Get a batch of training data
-inputs, labels = next(iter(dataloaders['train']))
-print("inputs.shape:", inputs.shape)
-print("labels.shape:", labels.shape)
-
-# Make a grid from batch
-out = torchvision.utils.make_grid(inputs[:8])
-
-imshow(out, title=[class_names[x] for x in labels[:8]])
-
-# Get a batch of validation data
-inputs, labels = next(iter(dataloaders['val']))
-print("inputs.shape:", inputs.shape)
-print("labels.shape:", labels.shape)
-
-# Make a grid from batch
-out = torchvision.utils.make_grid(inputs[:8])
-
-imshow(out, title=[class_names[x] for x in labels[:8]])
 
 """## Build model
 
@@ -196,9 +140,7 @@ class ResNet_18(nn.Module):
             nn.BatchNorm2d(out_channels)
         )
 
-model = ResNet_18(image_channels=3, num_classes=10)
-summary(model, (3, 224, 224), device='cpu')
-# summary(model, (3, 512, 512), device='cpu')
+
 
 """### Resnet from model zoo"""
 
@@ -254,22 +196,6 @@ def initialize_model(model_name, num_classes, feature_extract, use_pretrained=Tr
         exit()
 
     return model_ft, input_size
-
-# Models to choose from [resnet, alexnet, vgg, squeezenet, densenet, inception]
-model_name = "resnet"
-
-num_classes = 10
-num_epochs = 15
-
-# Flag for feature extracting. When False, we finetune the whole model,
-#   when True we only update the reshaped layer params
-feature_extract = False
-
-# Initialize the model for this run
-model_ft, input_size = initialize_model(model_name, num_classes, feature_extract, use_pretrained=True)
-
-# Print the model we just instantiated
-summary(model_ft, (3, 224, 224), device='cpu')
 
 """## Train model"""
 
@@ -344,50 +270,199 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
     model.load_state_dict(best_model_wts)
     return model, val_acc_history
 
-# Detect if we have a GPU available
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-params_to_update = model_ft.parameters()
-print("Params to learn:")
-if feature_extract:
-    params_to_update = []
-    for name,param in model_ft.named_parameters():
-        if param.requires_grad == True:
-            params_to_update.append(param)
-            print("\t",name)
-else:
-    for name,param in model_ft.named_parameters():
-        if param.requires_grad == True:
-            print("\t",name)
 
-# Observe that all parameters are being optimized
-optimizer_ft = optim.SGD(params_to_update, lr=0.001, momentum=0.9)
 
-# Setup the loss fxn
-criterion = nn.CrossEntropyLoss()
+if __name__ == '__main__':
+    data_dir = "./recaptcha-dataset/Large"
+    class_names = ['Bicycle', 'Bridge', 'Bus', 'Car',
+                'Chimney', 'Crosswalk', 'Hydrant',
+                'Motorcycle', 'Palm', 'Traffic Light']
 
-# Train and evaluate
-model_ft, hist = train_model(model_ft, dataloaders, criterion, optimizer_ft, num_epochs=num_epochs)
+    input_size = 224
+    batch_size = 32
 
-"""## Save the model & features"""
+    # Data augmentation and normalization for training
+    # Just normalization for validation
+    data_transforms = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.RandomResizedCrop(input_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
 
-# torch.save(model_ft.state_dict(), 'resnet18.pt')
+    print("Initializing Datasets and Dataloaders...")
 
-torch.save(model_ft, 'resnet18_ft.pt')
+    image_datasets = datasets.ImageFolder(data_dir, data_transforms)  # your dataset
+    num_data = len(image_datasets)
+    indices = np.arange(num_data)
+    np.random.shuffle(indices)
 
-model_ft = torch.load('resnet18_ft.pt')
-modules = list(model_ft.children())[:-1]
-resnet18_feat = nn.Sequential(*modules)
-for p in resnet18_feat.parameters():
-    p.requires_grad = False
+    train_size = int(num_data*0.8)
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size:]
+    train_set = torch.utils.data.Subset(image_datasets, train_indices)
+    val_set = torch.utils.data.Subset(image_datasets, val_indices)
 
-for inputs, labels in dataloaders['val']:
-    inputs = inputs.to(device)
-    h = resnet18_feat(inputs)
-    # print(h.shape)      # [32, 512, 1, 1]
+    print('Number of training data:', len(train_set))
+    print('Number of validation data:', len(val_set))
 
-    '''
-    code:
-    save the (features, labels)
-    '''
+    dataloaders = {'train': torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4),
+                    'val': torch.utils.data.DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=4)}
+    
+    # Get a batch of training data
+    inputs, labels = next(iter(dataloaders['train']))
+    print("inputs.shape:", inputs.shape)
+    print("labels.shape:", labels.shape)
 
+    # Make a grid from batch
+    out = torchvision.utils.make_grid(inputs[:8])
+
+    imshow(out, title=[class_names[x] for x in labels[:8]])
+
+    # Get a batch of validation data
+    inputs, labels = next(iter(dataloaders['val']))
+    print("inputs.shape:", inputs.shape)
+    print("labels.shape:", labels.shape)
+
+    # Make a grid from batch
+    out = torchvision.utils.make_grid(inputs[:8])
+
+    imshow(out, title=[class_names[x] for x in labels[:8]])
+    
+    model = ResNet_18(image_channels=3, num_classes=10)
+    summary(model, (3, 224, 224), device='cpu')
+    # summary(model, (3, 512, 512), device='cpu')
+    
+    # Models to choose from [resnet, alexnet, vgg, squeezenet, densenet, inception]
+    model_name = "resnet"
+
+    num_classes = 10
+    num_epochs = 15
+
+    # Flag for feature extracting. When False, we finetune the whole model,
+    #   when True we only update the reshaped layer params
+    feature_extract = False
+
+    # Initialize the model for this run
+    model_ft, input_size = initialize_model(model_name, num_classes, feature_extract, use_pretrained=True)
+
+    # Print the model we just instantiated
+    summary(model_ft, (3, 224, 224), device='cpu')
+    
+    # Detect if we have a GPU available
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    params_to_update = model_ft.parameters()
+    print("Params to learn:")
+    if feature_extract:
+        params_to_update = []
+        for name,param in model_ft.named_parameters():
+            if param.requires_grad == True:
+                params_to_update.append(param)
+                print("\t",name)
+    else:
+        for name,param in model_ft.named_parameters():
+            if param.requires_grad == True:
+                print("\t",name)
+
+    # Observe that all parameters are being optimized
+    optimizer_ft = optim.SGD(params_to_update, lr=0.001, momentum=0.9)
+
+    # Setup the loss fxn
+    criterion = nn.CrossEntropyLoss()
+
+    # Train and evaluate
+    model_ft, hist = train_model(model_ft, dataloaders, criterion, optimizer_ft, num_epochs=num_epochs)
+
+    """## Save the model & featuresl"""
+
+    # 모델의 웨이트만 저장
+    # torch.save(model_ft.state_dict(), 'resnet18.pt')
+
+    torch.save(model_ft, 'resnet18_ft.pt')
+
+    model_ft = torch.load('resnet18_ft.pt', weights_only=False)
+    modules = list(model_ft.children())[:-1]
+    resnet18_feat = nn.Sequential(*modules)
+
+    for p in resnet18_feat.parameters():
+        p.requires_grad = False
+        
+    # Test
+    out = resnet18_feat(torch.rand(1, 3, 224, 224).to(device))
+    print(out.shape)
+
+    out = out.view([-1, 512])
+    print(out.shape)
+
+    out = out.detach().cpu().numpy()
+    print(type(out))
+
+    train_features = []
+    train_labels = []
+    val_features = []
+    val_labels = []
+
+    for inputs, labels in tqdm(dataloaders['train']):
+        inputs = inputs.to(device)
+        h = resnet18_feat(inputs)
+
+        # Eliminate unnecessary dimensions
+        h = h.view([-1, 512])
+
+        # Move to 'cpu' & change to 'numpy array'
+        h = h.detach().cpu().numpy()
+
+        train_features.append(h)
+
+    # labels
+    train_labels.append(labels.detach().cpu().numpy())
+
+    for inputs, labels in tqdm(dataloaders['val']):
+        inputs = inputs.to(device)
+        h = resnet18_feat(inputs)
+
+        # Eliminate unnecessary dimensions
+        h = h.view([-1, 512])
+        # Move to 'cpu' & change to 'numpy array'
+        h = h.detach().cpu().numpy()
+
+        val_features.append(h)
+
+        # labels
+        val_labels.append(labels.detach().cpu().numpy())
+    
+    train_features = np.concat(train_features, axis=0)
+    train_labels = np.concat(train_labels, axis=0)
+    val_features = np.concat(val_features, axis=0)
+    val_labels = np.concat(val_labels, axis=0)
+
+    print(f"Train Features: ({train_features.shape})")
+    print(f"Train Labels: ({train_labels.shape})")
+    print(f"Validation Features: ({val_features.shape})")
+    print(f"Validation Labels: ({val_labels.shape})")
+    
+    """## KNN"""
+    recaptcha = './recaptcha-dataset/Large/'
+    labels = ['Bicycle','Bridge','Bus','Car','Chimney',
+            'Crosswalk','Hydrant','Motorcycle','Palm','Traffic Light']
+
+    classifier = KNeighborsClassifier(n_neighbors=5)
+    classifier.fit(train_features, train_labels)
+
+    predict_labels = classifier.predict(val_features)
+    print(classification_report(val_labels, predict_labels, labels=labels))
+
+    neigh_ind = classifier.kneighbors(X=val_features, n_neighbors=10, return_distance=False) # Top-10 results
+    neigh_labels = np.array(train_labels)[neigh_ind]
+    print(neigh_labels[:2])
+
+    # 숫자를 이름으로 변경
+    neigh_label_names = [[labels[idx] for idx in topk] for topk in neigh_labels]
+    print(neigh_label_names[:2])
+
+        
+        
+            
+            

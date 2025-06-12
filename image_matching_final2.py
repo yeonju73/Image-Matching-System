@@ -17,9 +17,9 @@ dataset_dir = './recaptcha-dataset/Large'
 labels = ['Bicycle','Bridge','Bus','Car','Chimney',
           'Crosswalk','Hydrant','Motorcycle','Palm','Traffic Light']
 # PCA 축소 차원
-pca_dims = 40
+pca_dims = 20
 # KNN 이웃 개수
-k_neighbors = 4
+k_neighbors = 7
 cv_folds    = 5
 
 # BoW 설정
@@ -69,15 +69,32 @@ def preprocess_extended(path):
     # 3) Canny 엣지 맵
     edges = cv2.Canny(eq, 100, 200)
     # 4) 샤프닝 (가우시안 블러를 이용)
-    gauss = cv2.GaussianBlur(eq, (3,3), 1)
+    gauss = cv2.GaussianBlur(eq, (3,3), 0.5)
     sharp = cv2.addWeighted(eq, 2, gauss, -1, 0)
-    return eq, edges, sharp
+    return eq, gray, sharp
 
 
-# 엣지 히스토그램 (32‐bin 예시)
-def extract_edge_hist(edge):
-    hist, _ = np.histogram(edge.ravel(), bins=32, range=(0,256))
-    return hist.astype(float) / hist.sum()
+# 어느 방향 엣지가 많고 강한지
+def extract_grad_orient_hist(gray, bins=8):
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    mag, ang = cv2.cartToPolar(gx, gy, angleInDegrees=True)
+    hist, _ = np.histogram(ang.ravel(), bins=bins, range=(0,180),
+                           weights=mag.ravel())
+    return hist / (hist.sum() + 1e-6)
+
+
+# 직선 구조(도로, 간판, 테두리 등)에 강점이 있는 피처
+def extract_lsd_features(gray):
+    lsd = cv2.createLineSegmentDetector(0)
+    lines = lsd.detect(gray)[0] or []
+    lengths = np.hypot(lines[:,:,2]-lines[:,:,0], lines[:,:,3]-lines[:,:,1]).ravel()
+    angles = (np.degrees(np.arctan2(lines[:,:,3]-lines[:,:,1],
+                                    lines[:,:,2]-lines[:,:,0])) % 180).ravel()
+    if len(lengths)==0: return np.zeros(6)
+    orient_hist, _ = np.histogram(angles, bins=3, range=(0,180))
+    orient_hist = orient_hist/orient_hist.sum()
+    return np.hstack([len(lengths), lengths.mean(), lengths.std(), orient_hist])
 
 # 샤프 영상에 LBP 적용
 def extract_lbp_sharp(sharp):
@@ -127,11 +144,6 @@ def extract_laws(gray):
     return np.array(energies)  # shape (9,)
 
 def extract_color_hist(path, bins=32):
-    """
-    BGR 이미지를 HSV로 변환한 뒤,
-    H, S, V 채널 각각에 대해 bins‐구간 히스토그램을 계산하고 정규화.
-    총 차원 = bins * 3
-    """
     img = cv2.imread(path)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     # H: [0,179], S/V: [0,255]
@@ -141,16 +153,25 @@ def extract_color_hist(path, bins=32):
     hist = np.hstack([h_hist, s_hist, v_hist]).astype(float)
     return hist / hist.sum()
 
+def extract_circle_features(gray):
+    circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1.2, 20,
+                               param1=50, param2=30, minRadius=5, maxRadius=100)
+    if circles is None:
+        return np.zeros(3)
+    circles = circles[0]
+    radii = circles[:,2]
+    return np.array([len(radii), radii.mean(), radii.std()])
+
 # --- 특징 추출 함수 --------------------------------
 
 def extract_features(path):
-    eq, edges, sharp = preprocess_extended(path)
+    eq, gray, sharp = preprocess_extended(path)
 
     f_lbp    = extract_lbp(eq)                    # 64
     # f_glcm   = extract_glcm_props(eq)            # 5
     f_laws   = extract_laws(eq)                  # 9
-    f_edge   = extract_edge_hist(edges)           # 32
-    f_lbp_sh = extract_lbp_sharp(sharp)           # 64
+    f_edge   = extract_grad_orient_hist(sharp)           # 32
+    # f_lbp_sh = extract_lbp_sharp(sharp)           # 64
 
     # SIFT BoW
     img_gray = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
@@ -159,72 +180,74 @@ def extract_features(path):
     
     # 컬러 히스토그램 (HSV)
     f_color  = extract_color_hist(path, bins=32)  # 96
+    f_circle = extract_circle_features(sharp)
+
 
     # 최종 피처 결합: 174d + 100d = 274d
-    return np.hstack([f_lbp_sh, f_laws, f_sift, f_color])
+    return np.hstack([f_lbp, f_laws, f_edge, f_sift, f_color, f_circle])
 
 
-# --- 데이터 로드 & 특징 추출 --------------------------------
-train_feats, train_labels = [], []
-test_feats,  test_labels  = [], []
+# # --- 데이터 로드 & 특징 추출 --------------------------------
+# train_feats, train_labels = [], []
+# test_feats,  test_labels  = [], []
 
-for lab in labels:
-    folder = os.path.join(dataset_dir, lab)
-    imgs = sorted(os.listdir(folder))
-    for i, name in enumerate(imgs):
-        path = os.path.join(folder, name)
-        feat = extract_features(path)
-        if i < 80:
-            train_feats.append(feat); train_labels.append(lab)
-        elif i < 101:
-            test_feats.append(feat);  test_labels.append(lab)
-        else:
-            break
+# for lab in labels:
+#     folder = os.path.join(dataset_dir, lab)
+#     imgs = sorted(os.listdir(folder))
+#     for i, name in enumerate(imgs):
+#         path = os.path.join(folder, name)
+#         feat = extract_features(path)
+#         if i < 80:
+#             train_feats.append(feat); train_labels.append(lab)
+#         elif i < 101:
+#             test_feats.append(feat);  test_labels.append(lab)
+#         else:
+#             break
 
-X_train = np.array(train_feats)
-y_train = np.array(train_labels)
-X_test  = np.array(test_feats)
-y_test  = np.array(test_labels)
+# X_train = np.array(train_feats)
+# y_train = np.array(train_labels)
+# X_test  = np.array(test_feats)
+# y_test  = np.array(test_labels)
 
-# --- 1) Standard Scaler 적용 --------------------------------
-scaler = StandardScaler()
-X_train_s = scaler.fit_transform(X_train)
-X_test_s  = scaler.transform(X_test)
+# # --- 1) Standard Scaler 적용 --------------------------------
+# scaler = StandardScaler()
+# X_train_s = scaler.fit_transform(X_train)
+# X_test_s  = scaler.transform(X_test)
 
-# --- 2) PCA 차원 축소 ------------------------------------------
-pca = PCA(n_components=pca_dims, random_state=42)
-X_train_p = pca.fit_transform(X_train_s)
-X_test_p  = pca.transform(X_test_s)
+# # --- 2) PCA 차원 축소 ------------------------------------------
+# pca = PCA(n_components=pca_dims, random_state=42)
+# X_train_p = pca.fit_transform(X_train_s)
+# X_test_p  = pca.transform(X_test_s)
 
-# --- KNN 학습 & 예측 ---------------------------------------
-knn = KNeighborsClassifier(n_neighbors=k_neighbors)
+# # --- KNN 학습 & 예측 ---------------------------------------
+# knn = KNeighborsClassifier(n_neighbors=k_neighbors)
 
-# 교차검증
-cv_scores = cross_val_score(knn, X_train_p, y_train,
-                            cv=cv_folds, scoring='accuracy', n_jobs=-1)
-print("\n------------------ 교차검증 ----------------------")
-print(f"{cv_folds}-fold CV accuracies (1-NN): {cv_scores}")
-print(f"Mean CV accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
-print("--------------------------------------------------\n")
+# # 교차검증
+# cv_scores = cross_val_score(knn, X_train_p, y_train,
+#                             cv=cv_folds, scoring='accuracy', n_jobs=-1)
+# print("\n------------------ 교차검증 ----------------------")
+# print(f"{cv_folds}-fold CV accuracies (1-NN): {cv_scores}")
+# print(f"Mean CV accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+# print("--------------------------------------------------\n")
 
 
-knn.fit(X_train_p, train_labels)
+# knn.fit(X_train_p, train_labels)
 
-# Task1: Classification (Top-1)
-pred1 = knn.predict(X_test_p)
-print(classification_report(test_labels, pred1))
+# # Task1: Classification (Top-1)
+# pred1 = knn.predict(X_test_p)
+# print(classification_report(test_labels, pred1))
 
-with open('c1_t1_a1.csv','w', newline='') as f:
-    w = csv.writer(f)
-    for idx, lab in enumerate(pred1, 1):
-        w.writerow([f'query{idx:03}.png', lab])
+# with open('c1_t1_a1.csv','w', newline='') as f:
+#     w = csv.writer(f)
+#     for idx, lab in enumerate(pred1, 1):
+#         w.writerow([f'query{idx:03}.png', lab])
 
-# Task2: Retrieval (Top-10)
-inds = knn.kneighbors(X_test_p, n_neighbors=10, return_distance=False)
-# neigh_labels: (100,10)
-neigh_labels = np.array(train_labels)[inds]
+# # Task2: Retrieval (Top-10)
+# inds = knn.kneighbors(X_test_p, n_neighbors=10, return_distance=False)
+# # neigh_labels: (100,10)
+# neigh_labels = np.array(train_labels)[inds]
 
-with open('c1_t2_a1.csv','w', newline='') as f:
-    w = csv.writer(f)
-    for idx, neigh in enumerate(neigh_labels, 1):
-        w.writerow([f'query{idx:03}.png'] + neigh.tolist())
+# with open('c1_t2_a1.csv','w', newline='') as f:
+#     w = csv.writer(f)
+#     for idx, neigh in enumerate(neigh_labels, 1):
+#         w.writerow([f'query{idx:03}.png'] + neigh.tolist())

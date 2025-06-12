@@ -96,6 +96,16 @@ def extract_sift(path):
     _,descr=sift.detectAndCompute(gray_img,None)
     return bow_histogram(descr)
 
+def extract_circle_features(gray):
+    circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1.2, 20,
+                               param1=50, param2=30, minRadius=5, maxRadius=100)
+    if circles is None:
+        return np.zeros(3)
+    circles = circles[0]
+    radii = circles[:,2]
+    return np.array([len(radii), radii.mean(), radii.std()])
+
+
 # 모든 피처 결합 함수
 def extract_features(path):
     gray, sharp=preprocess(path)
@@ -104,7 +114,8 @@ def extract_features(path):
         extract_grad_orient_hist(sharp),
         extract_laws(gray),
         extract_color_hist(path),
-        extract_sift(path)
+        extract_sift(path),
+        extract_circle_features(sharp)
     ])
 
 # 데이터 로드

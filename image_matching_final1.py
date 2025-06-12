@@ -69,7 +69,7 @@ def preprocess_extended(path):
     # 3) Canny 엣지 맵
     edges = cv2.Canny(eq, 100, 200)
     # 4) 샤프닝 (가우시안 블러를 이용)
-    gauss = cv2.GaussianBlur(eq, (3,3), 1)
+    gauss = cv2.GaussianBlur(eq, (3,3), 0.3)
     sharp = cv2.addWeighted(eq, 2, gauss, -1, 0)
     return eq, gray, sharp
 
@@ -181,67 +181,67 @@ def extract_features(path):
     return np.hstack([f_lbp, f_laws, f_edge, f_sift, f_color])
 
 
-# --- 데이터 로드 & 특징 추출 --------------------------------
-train_feats, train_labels = [], []
-test_feats,  test_labels  = [], []
+# # --- 데이터 로드 & 특징 추출 --------------------------------
+# train_feats, train_labels = [], []
+# test_feats,  test_labels  = [], []
 
-for lab in labels:
-    folder = os.path.join(dataset_dir, lab)
-    imgs = sorted(os.listdir(folder))
-    for i, name in enumerate(imgs):
-        path = os.path.join(folder, name)
-        feat = extract_features(path)
-        if i < 100:
-            train_feats.append(feat); train_labels.append(lab)
-        elif i < 120:
-            test_feats.append(feat);  test_labels.append(lab)
-        else:
-            break
+# for lab in labels:
+#     folder = os.path.join(dataset_dir, lab)
+#     imgs = sorted(os.listdir(folder))
+#     for i, name in enumerate(imgs):
+#         path = os.path.join(folder, name)
+#         feat = extract_features(path)
+#         if i < 80:
+#             train_feats.append(feat); train_labels.append(lab)
+#         elif i < 101:
+#             test_feats.append(feat);  test_labels.append(lab)
+#         else:
+#             break
 
-X_train = np.array(train_feats)
-y_train = np.array(train_labels)
-X_test  = np.array(test_feats)
-y_test  = np.array(test_labels)
+# X_train = np.array(train_feats)
+# y_train = np.array(train_labels)
+# X_test  = np.array(test_feats)
+# y_test  = np.array(test_labels)
 
-# --- 1) Standard Scaler 적용 --------------------------------
-scaler = StandardScaler()
-X_train_s = scaler.fit_transform(X_train)
-X_test_s  = scaler.transform(X_test)
+# # --- 1) Standard Scaler 적용 --------------------------------
+# scaler = StandardScaler()
+# X_train_s = scaler.fit_transform(X_train)
+# X_test_s  = scaler.transform(X_test)
 
-# --- 2) PCA 차원 축소 ------------------------------------------
-pca = PCA(n_components=pca_dims, random_state=42)
-X_train_p = pca.fit_transform(X_train_s)
-X_test_p  = pca.transform(X_test_s)
+# # --- 2) PCA 차원 축소 ------------------------------------------
+# pca = PCA(n_components=pca_dims, random_state=42)
+# X_train_p = pca.fit_transform(X_train_s)
+# X_test_p  = pca.transform(X_test_s)
 
-# --- KNN 학습 & 예측 ---------------------------------------
-knn = KNeighborsClassifier(n_neighbors=k_neighbors)
+# # --- KNN 학습 & 예측 ---------------------------------------
+# knn = KNeighborsClassifier(n_neighbors=k_neighbors)
 
-# 교차검증
-cv_scores = cross_val_score(knn, X_train_p, y_train,
-                            cv=cv_folds, scoring='accuracy', n_jobs=-1)
-print("\n------------------ 교차검증 ----------------------")
-print(f"{cv_folds}-fold CV accuracies (1-NN): {cv_scores}")
-print(f"Mean CV accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
-print("--------------------------------------------------\n")
+# # 교차검증
+# cv_scores = cross_val_score(knn, X_train_p, y_train,
+#                             cv=cv_folds, scoring='accuracy', n_jobs=-1)
+# print("\n------------------ 교차검증 ----------------------")
+# print(f"{cv_folds}-fold CV accuracies (1-NN): {cv_scores}")
+# print(f"Mean CV accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+# print("--------------------------------------------------\n")
 
 
-knn.fit(X_train_p, train_labels)
+# knn.fit(X_train_p, train_labels)
 
-# Task1: Classification (Top-1)
-pred1 = knn.predict(X_test_p)
-print(classification_report(test_labels, pred1))
+# # Task1: Classification (Top-1)
+# pred1 = knn.predict(X_test_p)
+# print(classification_report(test_labels, pred1))
 
-with open('c1_t1_a1.csv','w', newline='') as f:
-    w = csv.writer(f)
-    for idx, lab in enumerate(pred1, 1):
-        w.writerow([f'query{idx:03}.png', lab])
+# with open('c1_t1_a1.csv','w', newline='') as f:
+#     w = csv.writer(f)
+#     for idx, lab in enumerate(pred1, 1):
+#         w.writerow([f'query{idx:03}.png', lab])
 
-# Task2: Retrieval (Top-10)
-inds = knn.kneighbors(X_test_p, n_neighbors=10, return_distance=False)
-# neigh_labels: (100,10)
-neigh_labels = np.array(train_labels)[inds]
+# # Task2: Retrieval (Top-10)
+# inds = knn.kneighbors(X_test_p, n_neighbors=10, return_distance=False)
+# # neigh_labels: (100,10)
+# neigh_labels = np.array(train_labels)[inds]
 
-with open('c1_t2_a1.csv','w', newline='') as f:
-    w = csv.writer(f)
-    for idx, neigh in enumerate(neigh_labels, 1):
-        w.writerow([f'query{idx:03}.png'] + neigh.tolist())
+# with open('c1_t2_a1.csv','w', newline='') as f:
+#     w = csv.writer(f)
+#     for idx, neigh in enumerate(neigh_labels, 1):
+#         w.writerow([f'query{idx:03}.png'] + neigh.tolist())
